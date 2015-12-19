@@ -4,21 +4,49 @@ package main
 // #include <systemd/sd-journal.h>
 
 import (
-	"log"
+	"flag"
 	"fmt"
-	"time"
-	"strings"
+	"log"
+	"os"
+	"path/filepath"
 	"regexp"
+	"strings"
+	"time"
 
 	"github.com/coreos/go-systemd/sdjournal"
+	"github.com/coreos/go-systemd/util"
 	"k8s.io/kubernetes/pkg/kubelet/dockertools"
 )
 
 func main() {
-	// Open the system journal
-	j, err := sdjournal.NewJournal()
-	if err != nil {
-		log.Fatalln("Could not open journal:", err)
+	f := flag.NewFlagSet("f", flag.ExitOnError)
+	journalPath := f.String("alt-journal-base", "", "Use alternate base directory for journal.  Directory will be appended with /<machine-id> automatically.")
+	f.Parse(os.Args[1:])
+
+	var j *sdjournal.Journal
+	var err error
+
+	if len(*journalPath) > 0 {
+		// Open a journal in a custom location
+
+		// Get our machine-id, used to choose the correct journal subdirectory
+		machineID, err := util.GetMachineID()
+		if err != nil {
+			log.Fatalln("Could not get machine-id:", err)
+		}
+		fullPath := filepath.Join(*journalPath, machineID)
+
+		// Open the journal in our alternate location
+		j, err = sdjournal.NewJournalFromDir(fullPath)
+		if err != nil {
+			log.Fatalln("Could not open journal:", err)
+		}
+	} else {
+		// Open the system journal in the standard location
+		j, err = sdjournal.NewJournal()
+		if err != nil {
+			log.Fatalln("Could not open journal:", err)
+		}
 	}
 
 	// Seek to the end of the journal and begin "tailing" from there
@@ -29,8 +57,16 @@ func main() {
 
 	// Wait for new entries to show in the journal
 	for {
-		j.Next()
-		j.Wait(time.Minute * 5)
+		n, err := j.Next()
+		if n < 1 {
+			j.WaitIndefinitely()
+			continue
+		}
+		if err != nil {
+			log.Println("Could not advance next read pointer in journald:", err)
+			continue
+		}
+
 
 		t := time.Now()
 
@@ -43,7 +79,6 @@ func main() {
 		}
 		// The sdjournal library returns this as a string starting with MESSAGE=, so we discard that prefix
 		msg = msg[8:]
-
 
 		hostname, err := j.GetData("_HOSTNAME")
 		if err != nil {
