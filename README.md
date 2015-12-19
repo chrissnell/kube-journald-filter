@@ -19,6 +19,9 @@ Non-Kubernetes logged messages will be printed as usual, without the `NS=` and `
 Download a binary from the releases or build one yourself.
 
 ### Building your own binary.
+
+> NOTE: v1.1 depends on some new functionality in [github.com/coreos/go-systemd](https://github.com/coreos/go-systemd) that I have sent upstream as PRs.  Since I'm not vendoring this library and these PRs haven't been accepted yet, you will not be able to build this latest version from source unless you manually merge the PRs ([1](https://github.com/coreos/go-systemd/pull/128), [2](https://github.com/coreos/go-systemd/pull/129)) into go-systemd.  I recommend you download the binary release instead, which should work so long as you have libsystemd installed (```apt-get -y install libsystemd-dev``` on Ubuntu).  Alternatively, you can check out the older v1.0 tag and build without the go-systemd changes.
+
 You will need the systemd shared libraries.  For Ubuntu, you can install them like so:
 ```
 % sudo apt-get install libsystemd-dev
