@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/coreos/go-systemd/sdjournal"
 	"github.com/coreos/go-systemd/util"
@@ -19,7 +18,7 @@ import (
 )
 
 func main() {
-	f := flag.NewFlagSet("f", flag.ExitOnError)
+	f := flag.NewFlagSet("kube-journald-filter", flag.ExitOnError)
 	journalPath := f.String("alt-journal-base", "", "Use alternate base directory for journal.  Directory will be appended with /<machine-id> automatically.")
 	f.Parse(os.Args[1:])
 
@@ -59,7 +58,7 @@ func main() {
 	for {
 		n, err := j.Next()
 		if n < 1 {
-			j.WaitIndefinitely()
+			j.Wait(sdjournal.IndefiniteWait)
 			continue
 		}
 		if err != nil {
@@ -67,44 +66,35 @@ func main() {
 			continue
 		}
 
-
-		t := time.Now()
-
 		// A journal entry is really just a set of key-values.  The actual content of the logged message
 		// is stored under the MESSAGE key.  Retrieve it.
-		msg, err := j.GetData("MESSAGE")
+		msg, err := j.GetDataValue("MESSAGE")
 		if err != nil {
 			log.Println("Could not read MESSAGE from journald", err)
 			continue
 		}
-		// The sdjournal library returns this as a string starting with MESSAGE=, so we discard that prefix
-		msg = msg[8:]
 
-		hostname, err := j.GetData("_HOSTNAME")
+		hostname, err := j.GetDataValue("_HOSTNAME")
 		if err != nil {
 			log.Println("Could not read _HOSTNAME from journald", err)
 			continue
 		}
-		hostname = hostname[10:]
 
-		pid, err := j.GetData("_PID")
+		pid, err := j.GetDataValue("_PID")
 		if err != nil {
 			log.Println("Could not read _PID from journald", err)
 			continue
 		}
-		pid = pid[5:]
 
-		cmd, err := j.GetData("_COMM")
+		cmd, err := j.GetDataValue("_COMM")
 		if err != nil {
 			log.Println("Could not read _COMM from journald", err)
 			continue
 		}
-		cmd = cmd[6:]
 
 		// Docker logs the container name to CONTAINER_NAME.  Fetch that and if it's present, discard the prefix.
-		containerName, _ := j.GetData("CONTAINER_NAME")
+		containerName, _ := j.GetDataValue("CONTAINER_NAME")
 		if len(containerName) > 0 {
-			containerName = containerName[15:]
 			// Kubernetes-launched containers always start with "k8s".  This is a constant specified in the
 			// Kubernetes source code.  Unfortunately, it's not exported from there so we can't draw upon it
 			// and must define it here.
@@ -117,12 +107,12 @@ func main() {
 				} else {
 					tr := regexp.MustCompile(`(.*)_([a-z0-9-]*)$`)
 					matches := tr.FindStringSubmatch(kcn.PodFullName)
-					fmt.Printf("%v %v %v[%v] NS=%v POD=%v %v\n", t.Format("Jan 2 15:04:05"), hostname, cmd, pid, matches[2], matches[1], msg)
+					fmt.Printf("%v %v[%v] NS=%v POD=%v %v\n", hostname, cmd, pid, matches[2], matches[1], msg)
 				}
 			}
 		} else {
 			// If we didn't see a CONTAINER_NAME, just print the message as-is
-			fmt.Printf("%v %v %v[%v] %v\n", t.Format("Jan 2 15:04:05"), hostname, cmd, pid, msg)
+			fmt.Printf("%v %v[%v] %v\n", hostname, cmd, pid, msg)
 		}
 	}
 
